@@ -1,0 +1,86 @@
+---
+- name: Auditoría local de sistema macOS (M1)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Mostrar nombre del host
+      command: hostname
+      register: hostname_info
+    - debug: msg="Name: {{ hostname_info.stdout }}"
+
+    - name: Mostrar IPs (IPv4)
+      shell: ipconfig getifaddr en0 || ipconfig getifaddr en1 || echo "No IP found"
+      register: ip_info
+    - debug: msg="IPs: {{ ip_info.stdout }}"
+
+    - name: Mostrar sistema operativo
+      shell: sw_vers -productName
+      register: os_name
+    - name: Mostrar versión de sistema operativo
+      shell: sw_vers -productVersion
+      register: os_version
+    - name: Mostrar build del sistema operativo
+      shell: sw_vers -buildVersion
+      register: os_build
+    - debug:
+        msg:
+          - "Operating System: {{ os_name.stdout }}"
+          - "Version: {{ os_version.stdout }}"
+          - "Build: {{ os_build.stdout }}"
+
+    - name: Mostrar kernel info
+      command: uname -r
+      register: kernel_info
+    - debug: msg="Kernel Info: {{ kernel_info.stdout }}"
+
+    - name: Mostrar versión completa del kernel
+      command: uname -v
+      register: kernel_build
+    - debug: msg="OS BUILD VERSION: {{ kernel_build.stdout }}"
+
+    - name: Mostrar tipo de virtualización (si aplica)
+      shell: system_profiler SPHardwareDataType | grep "Virtualization" || echo "Native (no VM detected)"
+      register: virt_info
+    - debug: msg="Virtualization: {{ virt_info.stdout | default('Native (no VM detected)') }}"
+
+    - name: Mostrar memoria total (MB)
+      shell: "sysctl -n hw.memsize | awk '{print $1/1024/1024, \"MB\"}'"
+      register: mem_info
+    - debug: msg="Total Memory: {{ mem_info.stdout }}"
+
+    - name: Mostrar CPU Info
+      shell: sysctl -n machdep.cpu.brand_string
+      register: cpu_model
+    - name: Mostrar número de CPUs lógicos
+      shell: sysctl -n hw.logicalcpu
+      register: logical_cpu
+    - name: Mostrar número de CPUs físicos
+      shell: sysctl -n hw.physicalcpu
+      register: physical_cpu
+    - debug:
+        msg:
+          - "CPU Model: {{ cpu_model.stdout }}"
+          - "# Logical CPUs: {{ logical_cpu.stdout }}"
+          - "# Physical CPUs: {{ physical_cpu.stdout }}"
+
+    - name: Mostrar total de cores
+      set_fact:
+        total_cores: "{{ logical_cpu.stdout | int }}"
+    - debug: msg="Total number of cores: {{ total_cores }}"
+
+    - name: Mostrar almacenamiento total (en GB)
+      shell: "df -h / | tail -1 | awk '{print $2}'"
+      register: disk_info
+    - debug: msg="Disk Size: {{ disk_info.stdout }}"
+
+    - name: Mostrar fecha de último parche del sistema
+      shell: "softwareupdate --history | tail -5 || echo 'No update history found'"
+      register: patch_history
+    - debug: msg="Last Patch Info:\n{{ patch_history.stdout }}"
+
+    - name: Mostrar versión de Xcode Command Line Tools (si existe)
+      shell: "xcode-select --version 2>/dev/null || echo 'Not installed'"
+      register: xcode_info
+    - debug: msg="Xcode CLI Tools: {{ xcode_info.stdout }}"
