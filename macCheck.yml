@@ -1,5 +1,5 @@
 ---
-- name: Recolectar información del sistema Mac
+- name: Recolectar información del sistema Mac M1
   hosts: localhost
   connection: local
   gather_facts: no
@@ -14,14 +14,17 @@
       debug:
         msg: "Nombre del host: {{ hostname_info.stdout }}"
 
-    - name: Obtener versión del sistema operativo
-      command: sw_vers -productVersion
-      register: macos_version
+    - name: Obtener información completa del sistema
+      command: sw_vers
+      register: sw_vers_info
       changed_when: false
 
-    - name: Mostrar versión del sistema operativo
+    - name: Mostrar información completa del sistema
       debug:
-        msg: "Versión de macOS: {{ macos_version.stdout }}"
+        msg: 
+          - "ProductName: {{ sw_vers_info.stdout_lines[0] | regex_replace('ProductName:\\s+', '') }}"
+          - "ProductVersion: {{ sw_vers_info.stdout_lines[1] | regex_replace('ProductVersion:\\s+', '') }}"
+          - "BuildVersion: {{ sw_vers_info.stdout_lines[2] | regex_replace('BuildVersion:\\s+', '') }}"
 
     - name: Obtener arquitectura del sistema
       command: uname -m
@@ -31,6 +34,12 @@
     - name: Mostrar arquitectura
       debug:
         msg: "Arquitectura: {{ architecture.stdout }}"
+
+    - name: Obtener información del procesador
+      command: sysctl -n machdep.cpu.brand_string
+      register: cpu_info
+      changed_when: false
+      ignore_errors: yes
 
     - name: Obtener memoria total
       command: sysctl -n hw.memsize
@@ -57,7 +66,28 @@
 
     - name: Mostrar información de CPU
       debug:
-        msg: "CPUs físicas: {{ cpu_physical.stdout }}, CPUs lógicas: {{ cpu_logical.stdout }}"
+        msg: 
+          - "CPUs físicas: {{ cpu_physical.stdout }}"
+          - "CPUs lógicas: {{ cpu_logical.stdout }}"
+          - "Tipo de CPU: {{ cpu_info.stdout | default('No disponible') }}"
+
+    - name: Verificar si es Apple Silicon
+      set_fact:
+        is_apple_silicon: "{{ 'Apple' in cpu_info.stdout | default('') or architecture.stdout == 'arm64' }}"
+
+    - name: Mostrar tipo de arquitectura
+      debug:
+        msg: "Es Apple Silicon: {{ is_apple_silicon }}"
+
+    - name: Obtener información de GPU
+      command: system_profiler SPDisplaysDataType | grep -E "Chipset|VRAM"
+      register: gpu_info
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Mostrar información de GPU
+      debug:
+        msg: "Información de GPU: {{ gpu_info.stdout_lines | default('No disponible') }}"
 
     - name: Obtener espacio libre en disco
       command: df -h /
@@ -66,4 +96,29 @@
 
     - name: Mostrar espacio libre en disco
       debug:
-        msg: "Información de uso de disco: {{ disk_usage.stdout_lines }}"
+        msg: "Uso de disco en /:"
+      debug:
+        var: disk_usage.stdout
+
+    - name: Obtener temperatura del sistema (si está disponible)
+      command: powermetrics --samplers smc -n 1 -i 1000 | grep -i "cpu thermal"
+      register: temperature_info
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Mostrar información de temperatura si está disponible
+      debug:
+        msg: "Información de temperatura: {{ temperature_info.stdout | default('No disponible sin permisos de sudo') }}"
+      when: temperature_info.stdout != ""
+
+    - name: Resumen del sistema Mac M1
+      debug:
+        msg:
+          - "=== RESUMEN DEL SISTEMA MAC M1 ==="
+          - "Host: {{ hostname_info.stdout }}"
+          - "Arquitectura: {{ architecture.stdout }}"
+          - "Apple Silicon: {{ is_apple_silicon }}"
+          - "macOS: {{ sw_vers_info.stdout_lines[1] | regex_replace('ProductVersion:\\s+', '') }}"
+          - "Memoria: {{ memory_gb }} GB"
+          - "CPUs: {{ cpu_physical.stdout }} físicas, {{ cpu_logical.stdout }} lógicas"
+          - "Build: {{ sw_vers_info.stdout_lines[2] | regex_replace('BuildVersion:\\s+', '') }}"
