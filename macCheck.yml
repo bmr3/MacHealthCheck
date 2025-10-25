@@ -1,86 +1,69 @@
 ---
-- name: Auditoría local de sistema macOS (M1)
+- name: Recolectar información del sistema Mac
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: no
 
   tasks:
-    - name: Mostrar nombre del host
+    - name: Obtener el nombre del host
       command: hostname
       register: hostname_info
-    - debug: msg="Name: {{ hostname_info.stdout }}"
+      changed_when: false
 
-    - name: Mostrar IPs (IPv4)
-      shell: ipconfig getifaddr en0 || ipconfig getifaddr en1 || echo "No IP found"
-      register: ip_info
-    - debug: msg="IPs: {{ ip_info.stdout }}"
+    - name: Mostrar nombre del host
+      debug:
+        msg: "Nombre del host: {{ hostname_info.stdout }}"
 
-    - name: Mostrar sistema operativo
-      shell: sw_vers -productName
-      register: os_name
-    - name: Mostrar versión de sistema operativo
-      shell: sw_vers -productVersion
-      register: os_version
-    - name: Mostrar build del sistema operativo
-      shell: sw_vers -buildVersion
-      register: os_build
-    - debug:
-        msg:
-          - "Operating System: {{ os_name.stdout }}"
-          - "Version: {{ os_version.stdout }}"
-          - "Build: {{ os_build.stdout }}"
+    - name: Obtener versión del sistema operativo
+      command: sw_vers -productVersion
+      register: macos_version
+      changed_when: false
 
-    - name: Mostrar kernel info
-      command: uname -r
-      register: kernel_info
-    - debug: msg="Kernel Info: {{ kernel_info.stdout }}"
+    - name: Mostrar versión del sistema operativo
+      debug:
+        msg: "Versión de macOS: {{ macos_version.stdout }}"
 
-    - name: Mostrar versión completa del kernel
-      command: uname -v
-      register: kernel_build
-    - debug: msg="OS BUILD VERSION: {{ kernel_build.stdout }}"
+    - name: Obtener arquitectura del sistema
+      command: uname -m
+      register: architecture
+      changed_when: false
 
-    - name: Mostrar tipo de virtualización (si aplica)
-      shell: system_profiler SPHardwareDataType | grep "Virtualization" || echo "Native (no VM detected)"
-      register: virt_info
-    - debug: msg="Virtualization: {{ virt_info.stdout | default('Native (no VM detected)') }}"
+    - name: Mostrar arquitectura
+      debug:
+        msg: "Arquitectura: {{ architecture.stdout }}"
 
-    - name: Mostrar memoria total (MB)
-      shell: "sysctl -n hw.memsize | awk '{print $1/1024/1024, \"MB\"}'"
-      register: mem_info
-    - debug: msg="Total Memory: {{ mem_info.stdout }}"
+    - name: Obtener memoria total
+      command: sysctl -n hw.memsize
+      register: memory_bytes
+      changed_when: false
 
-    - name: Mostrar CPU Info
-      shell: sysctl -n machdep.cpu.brand_string
-      register: cpu_model
-    - name: Mostrar número de CPUs lógicos
-      shell: sysctl -n hw.logicalcpu
-      register: logical_cpu
-    - name: Mostrar número de CPUs físicos
-      shell: sysctl -n hw.physicalcpu
-      register: physical_cpu
-    - debug:
-        msg:
-          - "CPU Model: {{ cpu_model.stdout }}"
-          - "# Logical CPUs: {{ logical_cpu.stdout }}"
-          - "# Physical CPUs: {{ physical_cpu.stdout }}"
-
-    - name: Mostrar total de cores
+    - name: Calcular memoria en GB
       set_fact:
-        total_cores: "{{ logical_cpu.stdout | int }}"
-    - debug: msg="Total number of cores: {{ total_cores }}"
+        memory_gb: "{{ (memory_bytes.stdout | int / (1024**3)) | round(2) }}"
 
-    - name: Mostrar almacenamiento total (en GB)
-      shell: "df -h / | tail -1 | awk '{print $2}'"
-      register: disk_info
-    - debug: msg="Disk Size: {{ disk_info.stdout }}"
+    - name: Mostrar memoria total
+      debug:
+        msg: "Memoria total: {{ memory_gb }} GB"
 
-    - name: Mostrar fecha de último parche del sistema
-      shell: "softwareupdate --history | tail -5 || echo 'No update history found'"
-      register: patch_history
-    - debug: msg="Last Patch Info:\n{{ patch_history.stdout }}"
+    - name: Obtener número de CPU físicas
+      command: sysctl -n hw.physicalcpu
+      register: cpu_physical
+      changed_when: false
 
-    - name: Mostrar versión de Xcode Command Line Tools (si existe)
-      shell: "xcode-select --version 2>/dev/null || echo 'Not installed'"
-      register: xcode_info
-    - debug: msg="Xcode CLI Tools: {{ xcode_info.stdout }}"
+    - name: Obtener número de CPU lógicas
+      command: sysctl -n hw.logicalcpu
+      register: cpu_logical
+      changed_when: false
+
+    - name: Mostrar información de CPU
+      debug:
+        msg: "CPUs físicas: {{ cpu_physical.stdout }}, CPUs lógicas: {{ cpu_logical.stdout }}"
+
+    - name: Obtener espacio libre en disco
+      command: df -h /
+      register: disk_usage
+      changed_when: false
+
+    - name: Mostrar espacio libre en disco
+      debug:
+        msg: "Información de uso de disco: {{ disk_usage.stdout_lines }}"
