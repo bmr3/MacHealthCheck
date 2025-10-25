@@ -26,29 +26,50 @@
       debug:
         msg: "Puntos de montaje: {{ disk_facts.ansible_facts.ansible_mounts | map(attribute='mount') | list }}"
 
-    - name: Obtener espacio en disco con command (Linux)
+    - name: Obtener espacio en disco
       command: df -h /
       register: disk_usage
       changed_when: false
-      ignore_errors: yes
 
     - name: Mostrar espacio en disco
       debug:
-        msg: "Uso de disco (Linux): {{ disk_usage.stdout }}"
-      when: disk_usage is succeeded
+        msg: "Uso de disco: {{ disk_usage.stdout }}"
 
     - name: Verificar si es contenedor Docker
-      command: grep -c docker /proc/self/cgroup
-      register: is_docker
+      shell: |
+        if [ -f /.dockerenv ]; then
+          echo "true"
+        elif grep -q docker /proc/self/cgroup 2>/dev/null; then
+          echo "true" 
+        else
+          echo "false"
+        fi
+      register: docker_check
       changed_when: false
-      ignore_errors: yes
 
     - name: Mostrar entorno de ejecución
       debug:
-        msg: 
-          - "Ejecutando en contenedor Docker: {{ is_docker.stdout | default('No determinado') }}"
+        msg:
+          - "Ejecutando en contenedor Docker: {{ docker_check.stdout }}"
           - "Es Linux: {{ ansible_system == 'Linux' }}"
           - "Kernel: {{ ansible_kernel }}"
+          - "Es ARM64: {{ ansible_architecture == 'aarch64' }}"
+
+    - name: Obtener información de la imagen Docker
+      shell: |
+        if [ -f /etc/os-release ]; then
+          cat /etc/os-release | grep -E "PRETTY_NAME|NAME|VERSION" | head -3
+        else
+          echo "No disponible"
+        fi
+      register: os_info
+      changed_when: false
+      when: docker_check.stdout == "true"
+
+    - name: Mostrar información del SO contenedor
+      debug:
+        msg: "Información del SO: {{ os_info.stdout_lines }}"
+      when: docker_check.stdout == "true" and os_info is defined
 
     - name: Resumen del sistema
       debug:
@@ -60,4 +81,5 @@
           - "Kernel: {{ ansible_kernel }}"
           - "CPUs: {{ ansible_processor_count }} físicas, {{ ansible_processor_cores }} lógicas"
           - "Memoria: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
-          - "Docker: {{ is_docker.stdout | default('0') != '0' }}"
+          - "Docker: {{ docker_check.stdout }}"
+          - "Espacio disco: {{ disk_usage.stdout_lines[1] if disk_usage.stdout_lines|length > 1 else 'N/A' }}"
