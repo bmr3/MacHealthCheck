@@ -1,124 +1,63 @@
 ---
-- name: Recolectar información del sistema Mac M1
+- name: Recolectar información del sistema
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: yes
 
   tasks:
-    - name: Obtener el nombre del host
-      command: hostname
-      register: hostname_info
-      changed_when: false
-
-    - name: Mostrar nombre del host
+    - name: Mostrar información del sistema desde facts
       debug:
-        msg: "Nombre del host: {{ hostname_info.stdout }}"
+        msg:
+          - "Nombre del host: {{ ansible_hostname }}"
+          - "Sistema operativo: {{ ansible_system }}"
+          - "Distribución: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Arquitectura: {{ ansible_architecture }}"
+          - "Número de CPUs: {{ ansible_processor_count }}"
+          - "Número de CPUs lógicas: {{ ansible_processor_cores }}"
+          - "Memoria total: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
+          - "Memoria disponible: {{ (ansible_memfree_mb / 1024) | round(2) }} GB"
 
-    - name: Obtener información completa del sistema
-      command: sw_vers
-      register: sw_vers_info
-      changed_when: false
+    - name: Obtener información del disco
+      setup:
+        filter: ansible_mounts
+      register: disk_facts
 
-    - name: Mostrar información completa del sistema
+    - name: Mostrar información de discos
       debug:
-        msg: 
-          - "ProductName: {{ sw_vers_info.stdout_lines[0] | regex_replace('ProductName:\\s+', '') }}"
-          - "ProductVersion: {{ sw_vers_info.stdout_lines[1] | regex_replace('ProductVersion:\\s+', '') }}"
-          - "BuildVersion: {{ sw_vers_info.stdout_lines[2] | regex_replace('BuildVersion:\\s+', '') }}"
+        msg: "Puntos de montaje: {{ disk_facts.ansible_facts.ansible_mounts | map(attribute='mount') | list }}"
 
-    - name: Obtener arquitectura del sistema
-      command: uname -m
-      register: architecture
-      changed_when: false
-
-    - name: Mostrar arquitectura
-      debug:
-        msg: "Arquitectura: {{ architecture.stdout }}"
-
-    - name: Obtener información del procesador
-      command: sysctl -n machdep.cpu.brand_string
-      register: cpu_info
-      changed_when: false
-      ignore_errors: yes
-
-    - name: Obtener memoria total
-      command: sysctl -n hw.memsize
-      register: memory_bytes
-      changed_when: false
-
-    - name: Calcular memoria en GB
-      set_fact:
-        memory_gb: "{{ (memory_bytes.stdout | int / (1024**3)) | round(2) }}"
-
-    - name: Mostrar memoria total
-      debug:
-        msg: "Memoria total: {{ memory_gb }} GB"
-
-    - name: Obtener número de CPU físicas
-      command: sysctl -n hw.physicalcpu
-      register: cpu_physical
-      changed_when: false
-
-    - name: Obtener número de CPU lógicas
-      command: sysctl -n hw.logicalcpu
-      register: cpu_logical
-      changed_when: false
-
-    - name: Mostrar información de CPU
-      debug:
-        msg: 
-          - "CPUs físicas: {{ cpu_physical.stdout }}"
-          - "CPUs lógicas: {{ cpu_logical.stdout }}"
-          - "Tipo de CPU: {{ cpu_info.stdout | default('No disponible') }}"
-
-    - name: Verificar si es Apple Silicon
-      set_fact:
-        is_apple_silicon: "{{ 'Apple' in cpu_info.stdout | default('') or architecture.stdout == 'arm64' }}"
-
-    - name: Mostrar tipo de arquitectura
-      debug:
-        msg: "Es Apple Silicon: {{ is_apple_silicon }}"
-
-    - name: Obtener información de GPU
-      command: system_profiler SPDisplaysDataType | grep -E "Chipset|VRAM"
-      register: gpu_info
-      changed_when: false
-      ignore_errors: yes
-
-    - name: Mostrar información de GPU
-      debug:
-        msg: "Información de GPU: {{ gpu_info.stdout_lines | default('No disponible') }}"
-
-    - name: Obtener espacio libre en disco
+    - name: Obtener espacio en disco con command (Linux)
       command: df -h /
       register: disk_usage
       changed_when: false
+      ignore_errors: yes
 
-    - name: Mostrar espacio libre en disco
+    - name: Mostrar espacio en disco
       debug:
-        msg: "Uso de disco en /:"
-      debug:
-        var: disk_usage.stdout
+        msg: "Uso de disco (Linux): {{ disk_usage.stdout }}"
+      when: disk_usage is succeeded
 
-    - name: Obtener temperatura del sistema (si está disponible)
-      command: powermetrics --samplers smc -n 1 -i 1000 | grep -i "cpu thermal"
-      register: temperature_info
+    - name: Verificar si es contenedor Docker
+      command: grep -c docker /proc/self/cgroup
+      register: is_docker
       changed_when: false
       ignore_errors: yes
 
-    - name: Mostrar información de temperatura si está disponible
+    - name: Mostrar entorno de ejecución
       debug:
-        msg: "Información de temperatura: {{ temperature_info.stdout | default('No disponible sin permisos de sudo') }}"
-      when: temperature_info.stdout != ""
+        msg: 
+          - "Ejecutando en contenedor Docker: {{ is_docker.stdout | default('No determinado') }}"
+          - "Es Linux: {{ ansible_system == 'Linux' }}"
+          - "Kernel: {{ ansible_kernel }}"
 
-    - name: Resumen del sistema Mac M1
+    - name: Resumen del sistema
       debug:
         msg:
-          - "=== RESUMEN DEL SISTEMA MAC M1 ==="
-          - "Host: {{ hostname_info.stdout }}"
-          - "Arquitectura: {{ architecture.stdout }}"
-          - "Apple Silicon: {{ is_apple_silicon }}"
-          - "macOS: {{ sw_vers_info.stdout_lines[1] | regex_replace('ProductVersion:\\s+', '') }}"
-          - "Memoria: {{ memory_gb }} GB"
-          - "CPUs: {{ cpu_physical.stdout }} físicas, {{ cpu_logical.stdout }} lógicas"
-          - "Build: {{ sw_vers_info.stdout_lines[2] | regex_replace('BuildVersion:\\s+', '') }}"
+          - "=== RESUMEN DEL SISTEMA ==="
+          - "Host: {{ ansible_hostname }}"
+          - "SO: {{ ansible_system }} {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Arquitectura: {{ ansible_architecture }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "CPUs: {{ ansible_processor_count }} físicas, {{ ansible_processor_cores }} lógicas"
+          - "Memoria: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
+          - "Docker: {{ is_docker.stdout | default('0') != '0' }}"
