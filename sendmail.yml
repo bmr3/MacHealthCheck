@@ -1,0 +1,17 @@
+---
+- name: Debug extra vars from AWX
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    mail: "{{ mail | default('NOT_PROVIDED') }}"
+    subject: "{{ subject | default('NOT_PROVIDED') }}"
+    body: "{{ body | default('NOT_PROVIDED') }}"
+
+  tasks:
+    - name: Print extra vars
+      debug:
+        msg:
+          mail: "{{ mail }}"
+          subject: "{{ subject }}"
+          body: "{{ body }}"
